@@ -18,6 +18,94 @@ def get_data(log_path):
         lines = f.readlines()
     return lines
 
+def get_txt_info(lines, start_ep, end_ep, sample_freq, thres_list):
+    lines_len = len(lines)
+    thres_num = len(thres_list)
+
+    no_defect_img_acc = []
+    defect_img_acc = []
+    bbox_acc = []
+    bbox_recall = []
+
+    ndacc = [0] * thres_num
+    dacc = [0] * thres_num
+    bacc = [0] * thres_num
+    brcl = [0] * thres_num
+
+    # loss
+    total_loss_list = []
+    xy_loss_list = []
+    wh_loss_list = []
+    conf_loss_list = []
+
+    for idx, line in enumerate(lines):
+        if idx < 34:  continue  # 前34行有干扰信息
+        if not line.strip().endswith(".pth"):  # 如果不是以yolov3_ckpt_x.pth为开始
+            continue
+
+        epoch = line.strip().split("_")[2].split(".")[0]
+        # epoch = line.strip().split("_")[1].split(".")[0]
+        try: epoch = int(epoch)
+        except: continue
+
+        #  指定的epoch区间才接下去执行
+        if start_ep > epoch or epoch > end_ep or epoch == 0:
+            continue
+
+        #  =============================== get acc info ==================================
+        for th_idx, i in enumerate(range(1, 5 * thres_num, 5)):
+            data = lines[idx + i].strip().split()
+
+            if not epoch % sample_freq == 0:  #  如果行数不为采样频数的整数倍
+                ndacc[th_idx] += float(data[1])
+                dacc[th_idx] += float(data[2])
+                bacc[th_idx] += float(data[4])
+                brcl[th_idx] += float(data[6])
+            else:
+                no_defect_img_acc.append(ndacc[th_idx] / (sample_freq-1))
+                defect_img_acc.append(dacc[th_idx] / (sample_freq-1))
+                bbox_acc.append(bacc[th_idx] / (sample_freq-1))
+                bbox_recall.append(brcl[th_idx] / (sample_freq-1))
+                ndacc[th_idx] = 0
+                dacc[th_idx] = 0
+                bacc[th_idx] = 0
+                brcl[th_idx] = 0
+        #  =============================== get acc info ==================================
+
+        #  =============================== get loss info ==================================
+        i = idx + thres_num * 5 + 1
+
+        loss_dict = {'toal_loss': 0, 'xy_loss': 0, 'wh_loss': 0, 'conf_loss': 0}
+        loss_info_cnt = 0
+
+        # 获取Loss信息，与batch_size的设定有关，行数不定
+        while (i < lines_len and lines[i][0] == '['):
+            loss_dict['toal_loss'] += float(lines[i].strip().split()[6])
+            loss_dict['xy_loss'] += float(lines[i].strip().split()[8])
+            loss_dict['wh_loss'] += float(lines[i].strip().split()[10])
+            loss_dict['conf_loss'] += float(lines[i].strip().split()[12])
+            # lr = lines[i].strip().split()[14]
+
+            i = i + 1
+            loss_info_cnt += 1
+
+        # 对每个epoch的loss取均值
+        if(loss_info_cnt > 0):
+            total_loss_list.append(loss_dict['toal_loss'] / loss_info_cnt)
+            xy_loss_list.append(loss_dict['xy_loss'] / loss_info_cnt)
+            wh_loss_list.append(loss_dict['wh_loss'] / loss_info_cnt)
+            conf_loss_list.append(loss_dict['conf_loss'] / loss_info_cnt)
+        #  =============================== get loss info ==================================
+
+    # 存储为 shape == (epoch, 4)
+    no_defect_img_acc = np.reshape(no_defect_img_acc, (-1, thres_num))
+    defect_img_acc = np.reshape(defect_img_acc, (-1, thres_num))
+    bbox_acc = np.reshape(bbox_acc, (-1, thres_num))
+    bbox_recall = np.reshape(bbox_recall, (-1, thres_num))
+
+    return [no_defect_img_acc, defect_img_acc, bbox_acc, bbox_recall], [total_loss_list, xy_loss_list, wh_loss_list, conf_loss_list]
+
+
 def main(argv):
     parser = argparse.ArgumentParser()
 
@@ -46,100 +134,10 @@ def main(argv):
 
     # get .dat lines
     lines = get_data(args.log_path)
-    lines_len = len(lines)
-    # acc
-    no_defect_img_acc = []
-    defect_img_acc = []
-    bbox_acc = []
-    bbox_recall = []
+    acc, loss = get_txt_info(lines, args.start_epoch, args.end_epoch, args.ep_sample_iter, thres_list)
+    no_defect_img_acc, defect_img_acc,  bbox_acc, bbox_recall= acc[0], acc[1], acc[2], acc[3]
+    total_loss_list, xy_loss_list, wh_loss_list, conf_loss_list = loss[0], loss[1], loss[2], loss[3]
 
-    ndacc= [0] * thres_num
-    dacc = [0] * thres_num
-    bacc = [0] * thres_num
-    brcl = [0] * thres_num
-    print(ndacc)
-
-    # loss
-    total_loss_list = []
-    xy_loss_list = []
-    wh_loss_list = []
-    conf_loss_list = []
-
-    # temp
-    cnt = 0
-
-    # 遍历每行
-    for idx, line in enumerate(lines):
-        if idx < 34:  continue  # 前34行有干扰信息
-        if not line.strip().endswith(".pth"):  # 如果不是以yolov3_ckpt_x.pth为开始
-            continue
-
-        epoch = line.strip().split("_")[2].split(".")[0]
-        # epoch = line.strip().split("_")[1].split(".")[0]
-        try: epoch = int(epoch)
-        except: continue
-
-        #  指定的epoch区间
-        if args.start_epoch > epoch or epoch > args.end_epoch or epoch == 0:
-            continue
-
-        #  =============================== get acc info ==================================
-        for th_idx, i in enumerate(range(1, 5 * thres_num, 5)):
-            data = lines[idx + i].strip().split()
-
-            # print(epoch)
-            if not epoch % args.ep_sample_iter == 0:  #  如果行数不为采样频数的整数倍
-                ndacc[th_idx] += float(data[1])
-                dacc[th_idx] += float(data[2])
-                bacc[th_idx] += float(data[4])
-                brcl[th_idx] += float(data[6])
-                # pdb.set_trace()
-            else:
-                # pdb.set_trace()
-                no_defect_img_acc.append(ndacc[th_idx] / (args.ep_sample_iter-1))
-                defect_img_acc.append(dacc[th_idx] / (args.ep_sample_iter-1))
-                bbox_acc.append(bacc[th_idx] / (args.ep_sample_iter-1))
-                bbox_recall.append(brcl[th_idx] / (args.ep_sample_iter-1))
-                ndacc[th_idx] = 0
-                dacc[th_idx] = 0
-                bacc[th_idx] = 0
-                brcl[th_idx] = 0
-        #  =============================== get acc info ==================================
-
-        #  =============================== get loss info ==================================
-        # i = idx + 21
-        i = idx + thres_num * 5 + 1
-        loss_info_cnt = 0
-
-        loss = 0
-        xy_loss = 0
-        wh_loss = 0
-        conf_loss = 0
-
-        # 获取Loss信息，与batch_size的设定有关，行数不定
-        while (i < lines_len and lines[i][0] == '['):
-            loss += float(lines[i].strip().split()[6])
-            xy_loss += float(lines[i].strip().split()[8])
-            wh_loss += float(lines[i].strip().split()[10])
-            conf_loss += float(lines[i].strip().split()[12])
-            # lr = lines[i].strip().split()[14]
-
-            i = i + 1
-            loss_info_cnt += 1
-
-        # 对每个epoch的loss取均值
-        if(loss_info_cnt > 0):
-            total_loss_list.append(loss / loss_info_cnt)
-            xy_loss_list.append(xy_loss / loss_info_cnt)
-            wh_loss_list.append(wh_loss / loss_info_cnt)
-            conf_loss_list.append(conf_loss / loss_info_cnt)
-        #  =============================== get loss info ==================================
-
-    # 存储为 shape == (epoch, 4)
-    no_defect_img_acc = np.reshape(no_defect_img_acc, (-1, thres_num))
-    defect_img_acc = np.reshape(defect_img_acc, (-1, thres_num))
-    bbox_acc = np.reshape(bbox_acc, (-1, thres_num))
-    bbox_recall = np.reshape(bbox_recall, (-1, thres_num))
     # 画布
     plt.figure(figsize=[20, 20])
     # 画 thres_num 个acc图
@@ -164,7 +162,7 @@ def main(argv):
 
     if args.show_loss == 'True':
         # 画一个loss图
-        ax = plt.subplot(figureRow, figureCol, figureRow * figureCol) # loss信息放在画布的最后一个
+        ax = plt.subplot(figureRow, figureCol, figureRow * figureCol)  # loss信息放在画布的最后一个
         ax.set(xlim=[args.start_epoch, args.end_epoch], ylim=[0, 2], title='loss', ylabel='loss', xlabel='epoch')
         x = np.arange(args.start_epoch, args.end_epoch)
         plt.plot(x, total_loss_list[args.start_epoch:args.end_epoch], color='blue', linewidth=1, label='total_loss')
