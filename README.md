@@ -83,7 +83,7 @@ typora-copy-images-to: upload
 
       - 【效果】
 
-        
+        ![加载图片失败](https://github.com/ischansgithub/MyProjectExperience/blob/master/项目经历资料/image/txt_crop.png)
 
     - 使用hough变换来估计TFT阵列中纵贯线相对于垂直直线的偏移角度后矫正模板角度，做角度矫正的目的是为了使模板匹配得更准确。
       - 什么是hough变换【[参考链接](https://blog.csdn.net/sw3300255/article/details/82658596)】：
