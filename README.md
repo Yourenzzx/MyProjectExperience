@@ -4,9 +4,7 @@ typora-copy-images-to: upload
 
 # 项目经历
 
-
-
-2019.8-2020.8  TCL工业研究院计算机视觉（AI）算法实习生
+## 2019.8-2020.8  TCL工业研究院计算机视觉（AI）算法实习生
 
 - ADC(Auto Defect Classification)项目：缺陷检测->缺陷分类->模板分割->缺陷分割->开单逻辑->系统集成。ADC能定位图片上的Defect做分类，能输出覆盖的pixel数量，能识别defect的几何特性，如：断线，异常相交等，并能依据规则对glass进行判定，如是否需Rework，Repair，开立异常单，等级判定等
   
